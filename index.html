@@ -1,0 +1,1085 @@
+<!DOCTYPE html>
+<html lang="zh-TW" class="dark h-full">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>歷年演唱會紀錄 - Concert Archive</title>
+
+    <!-- Header Favicon Icon -->
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='48' fill='%236366F1'/><circle cx='50' cy='50' r='38' fill='%230B0F19'/><circle cx='50' cy='50' r='20' fill='%238B5CF6'/><circle cx='50' cy='50' r='8' fill='%23ffffff'/><path d='M50 12 A38 38 0 0 1 88 50' stroke='%23ffffff' stroke-width='4' stroke-linecap='round' fill='none' opacity='0.6'/></svg>">
+
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        darkbg: '#0B0F19',
+                        darkcard: '#151C2C',
+                        darkcardhover: '#1E293B',
+                        borderbg: '#2A364F',
+                        brand: {
+                            500: '#6366F1',
+                            600: '#4F46E5',
+                            accent: '#8B5CF6'
+                        }
+                    },
+                    fontFamily: {
+                        sans: ['Inter', 'Microsoft JhengHei', 'sans-serif']
+                    }
+                }
+            }
+        }
+    </script>
+
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <!-- Custom CSS Styles -->
+    <style>
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #0B0F19;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #2A364F;
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #4F46E5;
+        }
+        .glow-effect {
+            box-shadow: 0 0 20px -5px rgba(99, 102, 241, 0.25);
+        }
+        .tab-active {
+            border-bottom: 3px solid #6366F1;
+            color: #6366F1;
+            font-weight: 700;
+        }
+    </style>
+</head>
+
+<body class="bg-darkbg text-gray-100 min-h-full flex flex-col font-sans selection:bg-brand-500 selection:text-white">
+
+    <header class="sticky top-0 z-40 bg-darkbg/90 backdrop-blur-md border-b border-borderbg/60">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex items-center justify-between h-16">
+                <!-- App Title -->
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-brand-600 to-pink-500 flex items-center justify-center text-white shadow-lg shadow-brand-500/20">
+                        <i class="fa-solid fa-compact-disc text-xl animate-spin-slow"></i>
+                    </div>
+                    <div>
+                        <h1 class="text-lg font-bold bg-gradient-to-r from-white via-gray-200 to-gray-400 bg-clip-text text-transparent">
+                            演唱會歷年紀錄
+                        </h1>
+                        <p class="text-xs text-gray-400 hidden sm:block">Live Concert Archive & Stats</p>
+                    </div>
+                </div>
+
+                <!-- Navigation Tabs -->
+                <nav class="flex space-x-1 sm:space-x-4">
+                    <button id="tabConcerts" onclick="switchView('concerts')" class="px-3 py-2 text-sm font-medium rounded-lg text-gray-300 hover:text-white hover:bg-darkcard transition flex items-center gap-2">
+                        <i class="fa-solid fa-list-ul"></i>
+                        <span>演唱會列表</span>
+                    </button>
+                    <button id="tabStats" onclick="switchView('stats')" class="px-3 py-2 text-sm font-medium rounded-lg text-gray-300 hover:text-white hover:bg-darkcard transition flex items-center gap-2">
+                        <i class="fa-solid fa-chart-pie text-brand-500"></i>
+                        <span>數據分析</span>
+                    </button>
+                    <button onclick="fetchSheetData()" class="px-2.5 py-1.5 text-xs font-semibold rounded-lg bg-borderbg/50 hover:bg-borderbg text-gray-300 transition flex items-center gap-1.5 ml-2" title="重新整理資料">
+                        <i class="fa-solid fa-rotate text-xs"></i>
+                        <span class="hidden md:inline">同步資料</span>
+                    </button>
+                </nav>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Container -->
+    <main class="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">
+
+        <!-- Loading State -->
+        <div id="loadingState" class="flex flex-col items-center justify-center py-20 space-y-4">
+            <div class="relative w-16 h-16">
+                <div class="absolute top-0 left-0 w-full h-full border-4 border-brand-500/20 rounded-full"></div>
+                <div class="absolute top-0 left-0 w-full h-full border-4 border-brand-500 rounded-full border-t-transparent animate-spin"></div>
+            </div>
+            <p id="loadingText" class="text-gray-400 text-sm font-medium tracking-wide">載入 Google Sheets 演唱會資料中...</p>
+        </div>
+
+        <!-- Error State -->
+        <div id="errorState" class="hidden bg-red-950/40 border border-red-800/60 rounded-2xl p-6 text-center max-w-xl mx-auto my-10 space-y-4">
+            <div class="w-12 h-12 bg-red-900/50 rounded-full flex items-center justify-center mx-auto text-red-400 text-xl">
+                <i class="fa-solid fa-triangle-exclamation"></i>
+            </div>
+            <h3 class="text-lg font-bold text-red-200">讀取資料失敗</h3>
+            <p id="errorMessage" class="text-sm text-red-300/80 leading-relaxed">無法連接至 Google Sheets，請確認發布與分享權限設定。</p>
+            <div class="pt-2 flex justify-center gap-3">
+                <button onclick="fetchSheetData()" class="px-4 py-2 bg-red-600 hover:bg-red-500 text-white text-sm font-medium rounded-xl transition">
+                    重試
+                </button>
+                <button onclick="loadSampleData()" class="px-4 py-2 bg-darkcard hover:bg-darkcardhover text-gray-300 text-sm font-medium rounded-xl border border-borderbg transition">
+                    載入測試示範資料
+                </button>
+            </div>
+        </div>
+
+        <!-- Main Content Area -->
+        <div id="mainContent" class="hidden space-y-6">
+
+            <!-- ================= VIEW 1: CONCERT LIST VIEW ================= -->
+            <div id="viewConcerts" class="space-y-6">
+
+                <!-- Summary Overview Cards -->
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4">
+                    <div class="bg-darkcard border border-borderbg/80 rounded-2xl p-4 flex flex-col justify-between">
+                        <span class="text-xs text-gray-400 font-medium">參戰總場次</span>
+                        <div class="mt-2 flex items-baseline justify-between">
+                            <span id="statTotalShows" class="text-2xl sm:text-3xl font-extrabold text-white">0</span>
+                            <span class="text-xs text-brand-500 font-semibold">場</span>
+                        </div>
+                    </div>
+                    <div class="bg-darkcard border border-borderbg/80 rounded-2xl p-4 flex flex-col justify-between">
+                        <span class="text-xs text-gray-400 font-medium">累積門票花費</span>
+                        <div class="mt-2 flex items-baseline justify-between">
+                            <span id="statTotalPrice" class="text-2xl sm:text-3xl font-extrabold text-emerald-400">NT$ 0</span>
+                        </div>
+                    </div>
+                    <div class="bg-darkcard border border-borderbg/80 rounded-2xl p-4 flex flex-col justify-between">
+                        <span class="text-xs text-gray-400 font-medium">最常造訪場地</span>
+                        <div class="mt-2 flex items-center justify-between">
+                            <span id="statTopVenue" class="text-sm font-bold text-gray-200 truncate mr-1">--</span>
+                            <span id="statTopVenueCount" class="text-xs text-pink-400 font-bold">0次</span>
+                        </div>
+                    </div>
+                    <div class="bg-darkcard border border-borderbg/80 rounded-2xl p-4 flex flex-col justify-between">
+                        <span class="text-xs text-gray-400 font-medium">解鎖獨家歌手</span>
+                        <div class="mt-2 flex items-baseline justify-between">
+                            <span id="statUniqueArtists" class="text-2xl sm:text-3xl font-extrabold text-amber-400">0</span>
+                            <span class="text-xs text-amber-500 font-semibold">位</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Search & Filters Toolbar -->
+                <div class="bg-darkcard border border-borderbg/80 rounded-2xl p-4 space-y-3 shadow-lg">
+                    <div class="flex flex-col md:flex-row gap-3">
+                        <!-- Search Box -->
+                        <div class="relative flex-1">
+                            <i class="fa-solid fa-magnifying-glass absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 text-sm"></i>
+                            <input type="text" id="searchInput" placeholder="搜尋歌手、演唱會名稱、場地、特別嘉賓..." 
+                                   class="w-full pl-10 pr-9 py-2.5 bg-darkbg border border-borderbg rounded-xl text-sm text-white placeholder-gray-500 focus:outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500 transition">
+                            <button id="btnClearSearch" onclick="clearSearch()" class="hidden absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300">
+                                <i class="fa-solid fa-xmark"></i>
+                            </button>
+                        </div>
+
+                        <!-- Dropdowns Grid -->
+                        <div class="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                            <!-- Year Filter -->
+                            <select id="selectYear" class="bg-darkbg border border-borderbg rounded-xl px-3 py-2 text-xs sm:text-sm text-gray-200 focus:outline-none focus:border-brand-500">
+                                <option value="ALL">所有年份</option>
+                            </select>
+
+                            <!-- Show Type Filter -->
+                            <select id="selectType" class="bg-darkbg border border-borderbg rounded-xl px-3 py-2 text-xs sm:text-sm text-gray-200 focus:outline-none focus:border-brand-500">
+                                <option value="ALL">所有類型</option>
+                                <option value="SOLO">專場 (Main Artist)</option>
+                                <option value="MULTI">音樂節 / 聯演</option>
+                            </select>
+
+                            <!-- Sort Order -->
+                            <select id="selectSort" class="col-span-2 sm:col-span-1 bg-darkbg border border-borderbg rounded-xl px-3 py-2 text-xs sm:text-sm text-gray-200 focus:outline-none focus:border-brand-500">
+                                <option value="DATE_DESC">日期：由新到舊</option>
+                                <option value="DATE_ASC">日期：由舊到新</option>
+                                <option value="PRICE_DESC">票價：高到低</option>
+                                <option value="PRICE_ASC">票價：低到高</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <!-- Active Filter Notice -->
+                    <div id="filterInfo" class="hidden flex items-center justify-between text-xs text-gray-400 pt-1 border-t border-borderbg/40">
+                        <span>目前顯示：<strong id="filterResultCount" class="text-brand-500">0</strong> 場符合的項目</span>
+                        <button onclick="resetFilters()" class="text-gray-400 hover:text-white underline text-xs">清除所有篩選</button>
+                    </div>
+                </div>
+
+                <!-- Concert Cards Grid -->
+                <div id="concertGrid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    <!-- Cards will be dynamically inserted here -->
+                </div>
+
+                <!-- Empty Search Result -->
+                <div id="emptyResult" class="hidden text-center py-16 bg-darkcard/40 rounded-2xl border border-dashed border-borderbg">
+                    <i class="fa-solid fa-ban text-4xl text-gray-600 mb-3"></i>
+                    <p class="text-gray-300 font-medium">沒有符合篩選條件的演唱會紀錄</p>
+                    <p class="text-xs text-gray-500 mt-1">請嘗試變更搜尋關鍵字或年份</p>
+                    <button onclick="resetFilters()" class="mt-4 px-4 py-2 bg-brand-600 hover:bg-brand-500 text-white text-xs font-semibold rounded-xl transition">
+                        重設篩選條件
+                    </button>
+                </div>
+
+            </div>
+
+            <!-- ================= VIEW 2: ANALYTICS & STATS VIEW ================= -->
+            <div id="viewStats" class="hidden space-y-6">
+                
+                <!-- Sub Navigation / Filter for Artist Breakdown -->
+                <div class="bg-darkcard border border-borderbg/80 rounded-2xl p-4 flex flex-col md:flex-row md:items-center justify-between gap-4">
+                    <div>
+                        <h2 class="text-lg font-bold text-white flex items-center gap-2">
+                            <i class="fa-solid fa-ranking-star text-amber-400"></i>
+                            歌手與場地排名統計
+                        </h2>
+                        <p class="text-xs text-gray-400 mt-0.5">可切換角色類別查看不同形式的登場次數，點擊項目可直接列出對應場次</p>
+                    </div>
+
+                    <!-- Artist Role Filter Tabs -->
+                    <div class="flex bg-darkbg p-1 rounded-xl border border-borderbg/80 text-xs self-start md:self-auto">
+                        <button onclick="setArtistRoleFilter('ALL')" id="roleBtnALL" class="role-btn px-3 py-1.5 rounded-lg font-medium text-gray-400 hover:text-white transition">不限 (總計)</button>
+                        <button onclick="setArtistRoleFilter('MAIN')" id="roleBtnMAIN" class="role-btn px-3 py-1.5 rounded-lg font-medium text-gray-400 hover:text-white transition">主唱專場</button>
+                        <button onclick="setArtistRoleFilter('GUEST')" id="roleBtnGUEST" class="role-btn px-3 py-1.5 rounded-lg font-medium text-gray-400 hover:text-white transition">特別嘉賓</button>
+                        <button onclick="setArtistRoleFilter('MULTI')" id="roleBtnMULTI" class="role-btn px-3 py-1.5 rounded-lg font-medium text-gray-400 hover:text-white transition">音樂節陣容</button>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    <!-- Top Artists Ranking Container -->
+                    <div class="bg-darkcard border border-borderbg/80 rounded-2xl p-5 space-y-4">
+                        <div class="flex items-center justify-between border-b border-borderbg/60 pb-3">
+                            <h3 class="text-base font-bold text-white flex items-center gap-2">
+                                <i class="fa-solid fa-microphone-lines text-brand-500"></i>
+                                歌手參戰排行榜
+                            </h3>
+                            <span id="roleFilterLabel" class="text-xs text-brand-500 font-semibold bg-brand-500/10 px-2 py-0.5 rounded border border-brand-500/20">總計 (所有角色的演出)</span>
+                        </div>
+                        
+                        <div id="artistRankingList" class="space-y-3 max-h-[550px] overflow-y-auto pr-1">
+                            <!-- Dynamically filled -->
+                        </div>
+                    </div>
+
+                    <!-- Top Venues Ranking Container -->
+                    <div class="bg-darkcard border border-borderbg/80 rounded-2xl p-5 space-y-4">
+                        <div class="flex items-center justify-between border-b border-borderbg/60 pb-3">
+                            <h3 class="text-base font-bold text-white flex items-center gap-2">
+                                <i class="fa-solid fa-map-location-dot text-pink-500"></i>
+                                熱門場地造訪榜
+                            </h3>
+                            <span class="text-xs text-gray-400">以造訪次數排序</span>
+                        </div>
+
+                        <div id="venueRankingList" class="space-y-3 max-h-[550px] overflow-y-auto pr-1">
+                            <!-- Dynamically filled -->
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Yearly Breakdown Section -->
+                <div class="bg-darkcard border border-borderbg/80 rounded-2xl p-5 space-y-4">
+                    <h3 class="text-base font-bold text-white flex items-center gap-2 border-b border-borderbg/60 pb-3">
+                        <i class="fa-solid fa-calendar-days text-emerald-400"></i>
+                        歷年參戰場次與消費統計
+                    </h3>
+                    
+                    <div id="yearlyStatsGrid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                        <!-- Dynamically filled -->
+                    </div>
+                </div>
+
+            </div>
+
+        </div>
+    </main>
+
+    <!-- Footer -->
+    <footer class="border-t border-borderbg/40 py-6 text-center text-xs text-gray-500">
+        <p>© Live Concert Archive & Stats • Single Page Application</p>
+    </footer>
+
+    <script>
+        // Google Sheet Config
+        const SPREADSHEET_ID = '1-19Op-TzNwyTc-mSJ7soGQWda3P38l-GNqXHmRn0xE4';
+        const SHEET_CSV_URL = `https://docs.google.com/spreadsheets/d/${SPREADSHEET_ID}/export?format=csv`;
+
+        // State Variables
+        let allConcerts = [];
+        let filteredConcerts = [];
+        let activeRoleFilter = 'ALL'; // ALL, MAIN, GUEST, MULTI
+        let currentView = 'concerts';
+        let jsonpTimeoutTimer = null;
+
+        // DOM Elements
+        const loadingState = document.getElementById('loadingState');
+        const loadingText = document.getElementById('loadingText');
+        const errorState = document.getElementById('errorState');
+        const errorMessage = document.getElementById('errorMessage');
+        const mainContent = document.getElementById('mainContent');
+        const searchInput = document.getElementById('searchInput');
+        const selectYear = document.getElementById('selectYear');
+        const selectType = document.getElementById('selectType');
+        const selectSort = document.getElementById('selectSort');
+        const btnClearSearch = document.getElementById('btnClearSearch');
+
+        // Sample Backup Data (Fallback if completely offline or sheet unreachable)
+        const sampleData = [
+            { id: 1, date: '2023.6.10', year: '2023', location: '台北小巨蛋', mainArtist: '張清芳', event: '張清芳 Stella《TimeLESS》演唱會2023', price: 2200, priceRaw: '2,200', guest: '瘦子E.SO、陳嘉樺ELLA', multiArtist: '' },
+            { id: 2, date: '2023.11.11', year: '2023', location: '高雄國家體育場', mainArtist: 'Coldplay', event: 'Coldplay： Music Of The Spheres World Tour', price: 3800, priceRaw: '3,800', guest: '告五人', multiArtist: '' },
+            { id: 3, date: '2022.12.31', year: '2022', location: '桃園市立田徑場', mainArtist: '五月天', event: '五月天 MAYDAY 諾亞方舟 10週年進化復刻限定版演唱會', price: 2800, priceRaw: '2,800', guest: '品冠', multiArtist: '' },
+            { id: 4, date: '2020.12.01', year: '2020', location: '台中文心森林公園', mainArtist: '多位藝人', event: '2020 搖滾台中 Rock In Taichung', price: 0, priceRaw: '0', guest: '', multiArtist: '滅火器、鄭宜農、告五人、海豚刑警' },
+            { id: 5, date: '2020.12.02', year: '2020', location: '台中文心森林公園', mainArtist: '多位藝人', event: '2020 搖滾台中 Rock In Taichung Day 2', price: 0, priceRaw: '0', guest: '', multiArtist: '血肉果汁機、美秀集團、老王樂隊' },
+            { id: 6, date: '2019.04.14', year: '2019', location: 'Legacy Taipei', mainArtist: '草東沒有派對', event: '草東沒有派對《不萬能喜劇》專場', price: 1200, priceRaw: '1,200', guest: '', multiArtist: '' }
+        ];
+
+        // Init on page load
+        window.addEventListener('DOMContentLoaded', () => {
+            fetchSheetData();
+            setupEventListeners();
+        });
+
+        // Event Listeners setup
+        function setupEventListeners() {
+            searchInput.addEventListener('input', () => {
+                btnClearSearch.classList.toggle('hidden', searchInput.value.trim() === '');
+                applyFilters();
+            });
+            selectYear.addEventListener('change', applyFilters);
+            selectType.addEventListener('change', applyFilters);
+            selectSort.addEventListener('change', applyFilters);
+        }
+
+        /**
+         * Fetch Google Sheets Data
+         * Priority Strategy:
+         * 1. JSONP via GViz API (bypasses CORS restrictions on file:// local files)
+         * 2. Direct fetch CSV (works when hosted on HTTP/HTTPS web servers)
+         * 3. CORS Proxy (fallback for blocked network or strict CORS)
+         */
+        function fetchSheetData() {
+            showLoading("正在同步 Google Sheets 演唱會資料...");
+
+            // Strategy 1: JSONP via Google Sheet GViz API (Bypasses file:// CORS restrictions completely)
+            fetchSheetDataJSONP();
+        }
+
+        // Strategy 1: JSONP Google Sheet GViz API
+        function fetchSheetDataJSONP() {
+            const scriptId = 'gviz_jsonp_script';
+            const oldScript = document.getElementById(scriptId);
+            if (oldScript) oldScript.remove();
+
+            // Set global JSONP callback
+            window.handleGvizResponse = function(response) {
+                if (jsonpTimeoutTimer) clearTimeout(jsonpTimeoutTimer);
+                delete window.handleGvizResponse;
+
+                const scriptTag = document.getElementById(scriptId);
+                if (scriptTag) scriptTag.remove();
+
+                if (response && response.status === 'ok' && response.table) {
+                    parseGvizData(response.table);
+                } else {
+                    console.warn('GViz JSONP failed, attempting Fetch CSV...');
+                    fetchSheetDataCSV();
+                }
+            };
+
+            // Set timeout fallback to Strategy 2 if JSONP takes too long
+            jsonpTimeoutTimer = setTimeout(() => {
+                console.warn('GViz JSONP timed out, switching to fetch CSV...');
+                delete window.handleGvizResponse;
+                const scriptTag = document.getElementById(scriptId);
+                if (scriptTag) scriptTag.remove();
+                fetchSheetDataCSV();
+            }, 3500);
+
+            // Dynamic script tag insertion
+            const script = document.createElement('script');
+            script.id = scriptId;
+            script.src = `https://docs.google.com/spreadsheets/d/${SPREADSHEET_ID}/gviz/tq?tqx=responseHandler:handleGvizResponse`;
+            script.onerror = function() {
+                if (jsonpTimeoutTimer) clearTimeout(jsonpTimeoutTimer);
+                console.warn('Script injection failed, switching to fetch CSV...');
+                fetchSheetDataCSV();
+            };
+            document.head.appendChild(script);
+        }
+
+        // Strategy 2 & 3: Standard fetch CSV & CORS Proxy
+        async function fetchSheetDataCSV() {
+            try {
+                const response = await fetch(SHEET_CSV_URL);
+                if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                const csvText = await response.text();
+                parseCSVData(csvText);
+            } catch (err) {
+                console.warn('Direct fetch failed, trying CORS proxy:', err);
+                try {
+                    const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(SHEET_CSV_URL)}`;
+                    const res = await fetch(proxyUrl);
+                    if (!res.ok) throw new Error('Proxy error');
+                    const text = await res.text();
+                    parseCSVData(text);
+                } catch (proxyErr) {
+                    showError("無法讀取 Google Sheets 資料。請確認試算表已透過「檔案 ➔ 分享 ➔ 發布到網路」並公開存取權限。");
+                }
+            }
+        }
+
+        // Parse GViz Table Object (JSONP)
+        function parseGvizData(table) {
+            if (!table.cols || !table.rows) {
+                showError("讀取到的 Google Sheets 格式有誤。");
+                return;
+            }
+
+            const headers = table.cols.map(col => (col.label || col.id || '').trim().toLowerCase());
+            
+            const dateIdx = headers.findIndex(h => h.includes('date') || h.includes('日期'));
+            const locIdx = headers.findIndex(h => h.includes('location') || h.includes('地點') || h.includes('場地'));
+            const mainIdx = headers.findIndex(h => h.includes('main') || h.includes('主唱') || h.includes('歌手'));
+            const eventIdx = headers.findIndex(h => h.includes('event') || h.includes('活動') || h.includes('演唱會'));
+            const priceIdx = headers.findIndex(h => h.includes('price') || h.includes('票價') || h.includes('價格'));
+            const guestIdx = headers.findIndex(h => h.includes('guset') || h.includes('guest') || h.includes('嘉賓'));
+            const multiIdx = headers.findIndex(h => h.includes('multi') || h.includes('陣容') || h.includes('音樂節'));
+
+            const parsed = [];
+
+            table.rows.forEach((rowObj, idx) => {
+                if (!rowObj || !rowObj.c) return;
+
+                const getCellVal = (i) => {
+                    if (i === -1 || !rowObj.c[i]) return '';
+                    const cell = rowObj.c[i];
+                    if (cell.f !== undefined && cell.f !== null) return String(cell.f).trim();
+                    if (cell.v !== undefined && cell.v !== null) return String(cell.v).trim();
+                    return '';
+                };
+
+                const rawDate = getCellVal(dateIdx);
+                if (!rawDate) return;
+
+                const yearMatch = rawDate.match(/\d{4}/);
+                const year = yearMatch ? yearMatch[0] : '未知';
+
+                const rawPrice = getCellVal(priceIdx);
+                const cleanPrice = parseInt(rawPrice.replace(/[^\d]/g, ''), 10) || 0;
+
+                parsed.push({
+                    id: idx + 1,
+                    date: rawDate,
+                    year: year,
+                    location: getCellVal(locIdx) || '未標示',
+                    mainArtist: getCellVal(mainIdx) || '未標示',
+                    event: getCellVal(eventIdx) || '演唱會演出',
+                    price: cleanPrice,
+                    priceRaw: rawPrice,
+                    guest: getCellVal(guestIdx),
+                    multiArtist: getCellVal(multiIdx)
+                });
+            });
+
+            if (parsed.length === 0) {
+                showError("未能在試算表中找到有效的演唱會資料列。");
+                return;
+            }
+
+            allConcerts = parsed;
+            initApp();
+        }
+
+        // CSV Parser Fallback (For fetch requests)
+        function parseCSVData(csvText) {
+            const lines = [];
+            let row = [];
+            let inQuotes = false;
+            let currentToken = '';
+
+            for (let i = 0; i < csvText.length; i++) {
+                const char = csvText[i];
+                const nextChar = csvText[i+1];
+
+                if (char === '"') {
+                    if (inQuotes && nextChar === '"') {
+                        currentToken += '"';
+                        i++;
+                    } else {
+                        inQuotes = !inQuotes;
+                    }
+                } else if (char === ',' && !inQuotes) {
+                    row.push(currentToken.trim());
+                    currentToken = '';
+                } else if ((char === '\r' || char === '\n') && !inQuotes) {
+                    if (char === '\r' && nextChar === '\n') i++;
+                    row.push(currentToken.trim());
+                    if (row.some(cell => cell.length > 0)) lines.push(row);
+                    row = [];
+                    currentToken = '';
+                } else {
+                    currentToken += char;
+                }
+            }
+            if (currentToken || row.length > 0) {
+                row.push(currentToken.trim());
+                if (row.some(cell => cell.length > 0)) lines.push(row);
+            }
+
+            if (lines.length < 2) {
+                showError("讀取到的試算表內容為空。");
+                return;
+            }
+
+            const headers = lines[0].map(h => h.trim().toLowerCase());
+            
+            const dateIdx = headers.findIndex(h => h.includes('date') || h.includes('日期'));
+            const locIdx = headers.findIndex(h => h.includes('location') || h.includes('地點') || h.includes('場地'));
+            const mainIdx = headers.findIndex(h => h.includes('main') || h.includes('主唱') || h.includes('歌手'));
+            const eventIdx = headers.findIndex(h => h.includes('event') || h.includes('活動') || h.includes('演唱會'));
+            const priceIdx = headers.findIndex(h => h.includes('price') || h.includes('票價') || h.includes('價格'));
+            const guestIdx = headers.findIndex(h => h.includes('guset') || h.includes('guest') || h.includes('嘉賓'));
+            const multiIdx = headers.findIndex(h => h.includes('multi') || h.includes('陣容') || h.includes('音樂節'));
+
+            const parsed = [];
+
+            for (let i = 1; i < lines.length; i++) {
+                const r = lines[i];
+                if (!r || r.length === 0) continue;
+
+                const rawDate = (dateIdx !== -1 && r[dateIdx]) ? r[dateIdx] : '';
+                if (!rawDate) continue;
+
+                const yearMatch = rawDate.match(/\d{4}/);
+                const year = yearMatch ? yearMatch[0] : '未知';
+
+                const rawPrice = (priceIdx !== -1 && r[priceIdx]) ? r[priceIdx] : '0';
+                const cleanPrice = parseInt(rawPrice.replace(/[^\d]/g, ''), 10) || 0;
+
+                parsed.push({
+                    id: i,
+                    date: rawDate,
+                    year: year,
+                    location: (locIdx !== -1 && r[locIdx]) ? r[locIdx] : '未標示',
+                    mainArtist: (mainIdx !== -1 && r[mainIdx]) ? r[mainIdx] : '未標示',
+                    event: (eventIdx !== -1 && r[eventIdx]) ? r[eventIdx] : '演唱會演出',
+                    price: cleanPrice,
+                    priceRaw: rawPrice,
+                    guest: (guestIdx !== -1 && r[guestIdx]) ? r[guestIdx] : '',
+                    multiArtist: (multiIdx !== -1 && r[multiIdx]) ? r[multiIdx] : ''
+                });
+            }
+
+            if (parsed.length === 0) {
+                showError("未能解析出有效的演唱會資料，請檢查欄位標題。");
+                return;
+            }
+
+            allConcerts = parsed;
+            initApp();
+        }
+
+        function loadSampleData() {
+            allConcerts = [...sampleData];
+            initApp();
+        }
+
+        function showLoading(msg) {
+            if (msg) loadingText.textContent = msg;
+            loadingState.classList.remove('hidden');
+            errorState.classList.add('hidden');
+            mainContent.classList.add('hidden');
+        }
+
+        function showError(msg) {
+            loadingState.classList.add('hidden');
+            errorState.classList.remove('hidden');
+            mainContent.classList.add('hidden');
+            errorMessage.textContent = msg;
+        }
+
+        // App Initialization with Data
+        function initApp() {
+            populateYearOptions();
+            applyFilters();
+            renderStatsView();
+
+            loadingState.classList.add('hidden');
+            errorState.classList.add('hidden');
+            mainContent.classList.remove('hidden');
+        }
+
+        // Populate Year Options
+        function populateYearOptions() {
+            const years = [...new Set(allConcerts.map(item => item.year))].filter(y => y !== '未知').sort((a,b) => b - a);
+            selectYear.innerHTML = '<option value="ALL">所有年份</option>';
+            years.forEach(y => {
+                selectYear.innerHTML += `<option value="${y}">${y} 年</option>`;
+            });
+        }
+
+        // View Switching (SPA Navigation)
+        function switchView(view) {
+            currentView = view;
+            const tabConcerts = document.getElementById('tabConcerts');
+            const tabStats = document.getElementById('tabStats');
+            const viewConcerts = document.getElementById('viewConcerts');
+            const viewStats = document.getElementById('viewStats');
+
+            if (view === 'concerts') {
+                tabConcerts.classList.add('bg-darkcard', 'text-white', 'tab-active');
+                tabStats.classList.remove('bg-darkcard', 'text-white', 'tab-active');
+                viewConcerts.classList.remove('hidden');
+                viewStats.classList.add('hidden');
+            } else {
+                tabStats.classList.add('bg-darkcard', 'text-white', 'tab-active');
+                tabConcerts.classList.remove('bg-darkcard', 'text-white', 'tab-active');
+                viewStats.classList.remove('hidden');
+                viewConcerts.classList.add('hidden');
+                renderStatsView();
+            }
+        }
+
+        // Quick Filter by clicking any Artist, Guest, or Venue
+        function filterByTerm(term) {
+            if (!term) return;
+            switchView('concerts');
+            searchInput.value = term;
+            btnClearSearch.classList.remove('hidden');
+            applyFilters();
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+
+        // Clear Search Box
+        function clearSearch() {
+            searchInput.value = '';
+            btnClearSearch.classList.add('hidden');
+            applyFilters();
+        }
+
+        function resetFilters() {
+            searchInput.value = '';
+            selectYear.value = 'ALL';
+            selectType.value = 'ALL';
+            selectSort.value = 'DATE_DESC';
+            btnClearSearch.classList.add('hidden');
+            applyFilters();
+        }
+
+        // Apply Filters and Sorting
+        function applyFilters() {
+            const query = searchInput.value.toLowerCase().trim();
+            const yearVal = selectYear.value;
+            const typeVal = selectType.value;
+            const sortVal = selectSort.value;
+
+            filteredConcerts = allConcerts.filter(item => {
+                const matchQuery = !query || 
+                    item.event.toLowerCase().includes(query) ||
+                    item.mainArtist.toLowerCase().includes(query) ||
+                    item.location.toLowerCase().includes(query) ||
+                    item.guest.toLowerCase().includes(query) ||
+                    item.multiArtist.toLowerCase().includes(query);
+
+                const matchYear = (yearVal === 'ALL') || (item.year === yearVal);
+
+                let matchType = true;
+                if (typeVal === 'SOLO') {
+                    matchType = !item.multiArtist;
+                } else if (typeVal === 'MULTI') {
+                    matchType = !!item.multiArtist;
+                }
+
+                return matchQuery && matchYear && matchType;
+            });
+
+            // Sorting logic
+            filteredConcerts.sort((a, b) => {
+                if (sortVal === 'DATE_DESC') {
+                    return b.date.localeCompare(a.date);
+                } else if (sortVal === 'DATE_ASC') {
+                    return a.date.localeCompare(b.date);
+                } else if (sortVal === 'PRICE_DESC') {
+                    return b.price - a.price;
+                } else if (sortVal === 'PRICE_ASC') {
+                    return a.price - b.price;
+                }
+                return 0;
+            });
+
+            // Update UI
+            renderOverviewCards();
+            renderConcertCards();
+
+            const isFiltered = query || yearVal !== 'ALL' || typeVal !== 'ALL';
+            document.getElementById('filterInfo').classList.toggle('hidden', !isFiltered);
+            document.getElementById('filterResultCount').textContent = filteredConcerts.length;
+        }
+
+        // Render Summary Overview Top Cards
+        function renderOverviewCards() {
+            document.getElementById('statTotalShows').textContent = filteredConcerts.length;
+
+            const totalPrice = filteredConcerts.reduce((sum, item) => sum + item.price, 0);
+            document.getElementById('statTotalPrice').textContent = 'NT$ ' + totalPrice.toLocaleString();
+
+            const venueCounts = {};
+            filteredConcerts.forEach(item => {
+                if (item.location && item.location !== '未標示') {
+                    venueCounts[item.location] = (venueCounts[item.location] || 0) + 1;
+                }
+            });
+            let topVenue = '--';
+            let topCount = 0;
+            Object.entries(venueCounts).forEach(([v, c]) => {
+                if (c > topCount) {
+                    topCount = c;
+                    topVenue = v;
+                }
+            });
+            document.getElementById('statTopVenue').textContent = topVenue;
+            document.getElementById('statTopVenueCount').textContent = topCount > 0 ? `${topCount}次` : '0次';
+
+            const artistSet = new Set();
+            filteredConcerts.forEach(item => {
+                if (item.mainArtist && item.mainArtist !== '未標示' && item.mainArtist !== '多位藝人') {
+                    artistSet.add(item.mainArtist);
+                }
+                if (item.multiArtist) {
+                    item.multiArtist.split(/[,、]/).forEach(a => {
+                        const trimmed = a.trim();
+                        if (trimmed) artistSet.add(trimmed);
+                    });
+                }
+            });
+            document.getElementById('statUniqueArtists').textContent = artistSet.size;
+        }
+
+        // Render Concert Cards
+        function renderConcertCards() {
+            const grid = document.getElementById('concertGrid');
+            const empty = document.getElementById('emptyResult');
+
+            if (filteredConcerts.length === 0) {
+                grid.innerHTML = '';
+                empty.classList.remove('hidden');
+                return;
+            }
+            empty.classList.add('hidden');
+
+            grid.innerHTML = filteredConcerts.map(item => {
+                const isMulti = !!item.multiArtist;
+                const badgeColor = isMulti 
+                    ? 'bg-amber-500/10 text-amber-400 border-amber-500/30' 
+                    : 'bg-brand-500/10 text-brand-500 border-brand-500/30';
+
+                return `
+                    <div class="bg-darkcard border border-borderbg/80 hover:border-brand-500/50 rounded-2xl p-5 flex flex-col justify-between transition-all duration-300 hover:-translate-y-1 hover:shadow-xl group">
+                        <div>
+                            <!-- Header: Date & Type Badge -->
+                            <div class="flex items-center justify-between gap-2 mb-3">
+                                <span class="text-xs font-bold text-gray-400 bg-darkbg px-2.5 py-1 rounded-lg border border-borderbg/60 flex items-center gap-1.5">
+                                    <i class="fa-regular fa-calendar text-brand-500"></i>
+                                    ${escapeHtml(item.date)}
+                                </span>
+                                <span class="text-[11px] font-semibold px-2.5 py-0.5 rounded-full border ${badgeColor}">
+                                    ${isMulti ? '音樂節 / 聯演' : '專場演唱會'}
+                                </span>
+                            </div>
+
+                            <!-- Event Title -->
+                            <h2 class="text-lg font-bold text-white group-hover:text-brand-500 transition-colors line-clamp-2 mb-2 leading-snug">
+                                ${escapeHtml(item.event)}
+                            </h2>
+                            
+                            <!-- Main Artist -->
+                            <div class="flex items-center gap-2 mb-3">
+                                <i class="fa-solid fa-microphone text-xs text-brand-accent"></i>
+                                <button onclick="filterByTerm('${escapeHtml(item.mainArtist)}')" class="text-sm font-semibold text-gray-300 hover:text-brand-500 hover:underline transition text-left cursor-pointer">
+                                    ${escapeHtml(item.mainArtist)}
+                                </button>
+                            </div>
+
+                            <!-- Location -->
+                            <div class="flex items-start gap-2 text-xs text-gray-400 mb-2">
+                                <i class="fa-solid fa-location-dot mt-0.5 text-pink-500"></i>
+                                <button onclick="filterByTerm('${escapeHtml(item.location)}')" class="hover:text-pink-400 hover:underline transition text-left cursor-pointer line-clamp-1">
+                                    ${escapeHtml(item.location)}
+                                </button>
+                            </div>
+
+                            <!-- Guests Section -->
+                            ${item.guest ? `
+                                <div class="mt-3 pt-3 border-t border-borderbg/60 text-xs">
+                                    <span class="text-[11px] text-amber-400 font-semibold block mb-1">
+                                        <i class="fa-solid fa-star text-amber-400 mr-1"></i> 特別嘉賓 (Guest):
+                                    </span>
+                                    <div class="flex flex-wrap gap-1.5">
+                                        ${item.guest.split(/[,、]/).map(g => `<button onclick="filterByTerm('${escapeHtml(g.trim())}')" class="px-2 py-0.5 rounded bg-amber-500/10 hover:bg-amber-500/30 text-amber-300 text-[11px] border border-amber-500/20 transition cursor-pointer">${escapeHtml(g.trim())}</button>`).join('')}
+                                    </div>
+                                </div>
+                            ` : ''}
+
+                            <!-- Multi Artist Lineup Section -->
+                            ${item.multiArtist ? `
+                                <div class="mt-3 pt-3 border-t border-borderbg/60 text-xs">
+                                    <span class="text-[11px] text-brand-500 font-semibold block mb-1">
+                                        <i class="fa-solid fa-users text-brand-500 mr-1"></i> 演出陣容 (Lineup):
+                                    </span>
+                                    <div class="flex flex-wrap gap-1.5">
+                                        ${item.multiArtist.split(/[,、]/).map(a => `<button onclick="filterByTerm('${escapeHtml(a.trim())}')" class="px-2 py-0.5 rounded bg-brand-500/10 hover:bg-brand-500/30 text-brand-300 text-[11px] border border-brand-500/20 transition cursor-pointer">${escapeHtml(a.trim())}</button>`).join('')}
+                                    </div>
+                                </div>
+                            ` : ''}
+                        </div>
+
+                        <!-- Card Footer: Price -->
+                        <div class="mt-4 pt-3 border-t border-borderbg/60 flex items-center justify-between text-xs text-gray-400">
+                            <span>門票金額</span>
+                            <span class="text-sm font-bold ${item.price > 0 ? 'text-emerald-400' : 'text-gray-400'}">
+                                ${item.price > 0 ? 'NT$ ' + item.price.toLocaleString() : '免費 / 未標示'}
+                            </span>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        // ================= ANALYTICS & STATS ENGINE =================
+        function setArtistRoleFilter(role) {
+            activeRoleFilter = role;
+            
+            document.querySelectorAll('.role-btn').forEach(btn => {
+                btn.classList.remove('bg-brand-600', 'text-white');
+                btn.classList.add('text-gray-400');
+            });
+            const activeBtn = document.getElementById(`roleBtn${role}`);
+            if (activeBtn) {
+                activeBtn.classList.add('bg-brand-600', 'text-white');
+                activeBtn.classList.remove('text-gray-400');
+            }
+
+            const labelMap = {
+                'ALL': '總計 (所有角色的登場次數)',
+                'MAIN': '僅主唱專場次數',
+                'GUEST': '僅作為特別嘉賓登場次數',
+                'MULTI': '僅音樂節/演出陣容登場次數'
+            };
+            document.getElementById('roleFilterLabel').textContent = labelMap[role] || '';
+
+            renderArtistRanking();
+        }
+
+        function renderStatsView() {
+            setArtistRoleFilter(activeRoleFilter);
+            renderVenueRanking();
+            renderYearlyStats();
+        }
+
+        function renderArtistRanking() {
+            const list = document.getElementById('artistRankingList');
+            const artistMap = {};
+
+            allConcerts.forEach(item => {
+                const showId = item.id;
+
+                if (item.mainArtist && item.mainArtist !== '未標示' && item.mainArtist !== '多位藝人') {
+                    const name = item.mainArtist.trim();
+                    if (!artistMap[name]) artistMap[name] = { name, main: 0, guest: 0, multi: 0, totalSet: new Set() };
+                    artistMap[name].main += 1;
+                    artistMap[name].totalSet.add(showId);
+                }
+
+                if (item.guest) {
+                    item.guest.split(/[,、]/).forEach(g => {
+                        const name = g.trim();
+                        if (name) {
+                            if (!artistMap[name]) artistMap[name] = { name, main: 0, guest: 0, multi: 0, totalSet: new Set() };
+                            artistMap[name].guest += 1;
+                            artistMap[name].totalSet.add(showId);
+                        }
+                    });
+                }
+
+                if (item.multiArtist) {
+                    item.multiArtist.split(/[,、]/).forEach(m => {
+                        const name = m.trim();
+                        if (name) {
+                            if (!artistMap[name]) artistMap[name] = { name, main: 0, guest: 0, multi: 0, totalSet: new Set() };
+                            artistMap[name].multi += 1;
+                            artistMap[name].totalSet.add(showId);
+                        }
+                    });
+                }
+            });
+
+            const artistList = Object.values(artistMap).map(a => {
+                let displayCount = 0;
+                if (activeRoleFilter === 'ALL') displayCount = a.totalSet.size;
+                else if (activeRoleFilter === 'MAIN') displayCount = a.main;
+                else if (activeRoleFilter === 'GUEST') displayCount = a.guest;
+                else if (activeRoleFilter === 'MULTI') displayCount = a.multi;
+
+                return {
+                    ...a,
+                    totalShows: a.totalSet.size,
+                    displayCount
+                };
+            }).filter(a => a.displayCount > 0);
+
+            artistList.sort((a, b) => b.displayCount - a.displayCount || b.totalShows - a.totalShows);
+
+            if (artistList.length === 0) {
+                list.innerHTML = '<p class="text-center text-sm text-gray-500 py-8">此分類尚無演出資料</p>';
+                return;
+            }
+
+            const maxVal = artistList[0].displayCount || 1;
+
+            list.innerHTML = artistList.map((artist, idx) => {
+                const percent = Math.min(Math.round((artist.displayCount / maxVal) * 100), 100);
+                
+                let rankBadge = `<span class="w-6 h-6 flex items-center justify-center rounded-full text-xs font-bold bg-darkbg text-gray-400 border border-borderbg">${idx + 1}</span>`;
+                if (idx === 0) rankBadge = `<span class="w-6 h-6 flex items-center justify-center rounded-full text-xs font-bold bg-amber-500 text-darkbg shadow-sm">1</span>`;
+                if (idx === 1) rankBadge = `<span class="w-6 h-6 flex items-center justify-center rounded-full text-xs font-bold bg-slate-300 text-darkbg shadow-sm">2</span>`;
+                if (idx === 2) rankBadge = `<span class="w-6 h-6 flex items-center justify-center rounded-full text-xs font-bold bg-amber-700 text-white shadow-sm">3</span>`;
+
+                return `
+                    <div class="p-3.5 bg-darkbg/70 border border-borderbg/80 rounded-xl space-y-2.5">
+                        <div class="flex items-center justify-between">
+                            <div class="flex items-center gap-2.5">
+                                ${rankBadge}
+                                <button onclick="filterByTerm('${escapeHtml(artist.name)}')" class="font-bold text-sm text-white hover:text-brand-500 hover:underline text-left cursor-pointer flex items-center gap-1.5 group">
+                                    <span>${escapeHtml(artist.name)}</span>
+                                    <i class="fa-solid fa-arrow-right-to-bracket text-xs opacity-0 group-hover:opacity-100 transition-opacity text-brand-500"></i>
+                                </button>
+                            </div>
+                            <div class="text-right">
+                                <button onclick="filterByTerm('${escapeHtml(artist.name)}')" class="text-sm font-extrabold text-brand-500 hover:underline cursor-pointer">
+                                    ${artist.displayCount} 場
+                                </button>
+                            </div>
+                        </div>
+
+                        <div class="flex flex-wrap gap-2 text-[11px] text-gray-400 pl-8">
+                            ${artist.main > 0 ? `<span class="px-2 py-0.5 rounded bg-brand-500/10 text-brand-300 border border-brand-500/20">專場主唱: ${artist.main}</span>` : ''}
+                            ${artist.guest > 0 ? `<span class="px-2 py-0.5 rounded bg-amber-500/10 text-amber-300 border border-amber-500/20">特別嘉賓: ${artist.guest}</span>` : ''}
+                            ${artist.multi > 0 ? `<span class="px-2 py-0.5 rounded bg-purple-500/10 text-purple-300 border border-purple-500/20">音樂節陣容: ${artist.multi}</span>` : ''}
+                        </div>
+
+                        <div class="w-full bg-gray-800 h-1.5 rounded-full overflow-hidden">
+                            <div class="bg-gradient-to-r from-brand-600 to-purple-500 h-full rounded-full transition-all duration-500" style="width: ${percent}%"></div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function renderVenueRanking() {
+            const list = document.getElementById('venueRankingList');
+            const venueCounts = {};
+
+            allConcerts.forEach(item => {
+                if (item.location && item.location !== '未標示') {
+                    venueCounts[item.location] = (venueCounts[item.location] || 0) + 1;
+                }
+            });
+
+            const venueList = Object.entries(venueCounts)
+                .map(([name, count]) => ({ name, count }))
+                .sort((a, b) => b.count - a.count);
+
+            if (venueList.length === 0) {
+                list.innerHTML = '<p class="text-center text-sm text-gray-500 py-8">尚無場地紀錄</p>';
+                return;
+            }
+
+            const maxCount = venueList[0].count || 1;
+
+            list.innerHTML = venueList.map((venue, idx) => {
+                const percent = Math.min(Math.round((venue.count / maxCount) * 100), 100);
+
+                let rankBadge = `<span class="w-6 h-6 flex items-center justify-center rounded-full text-xs font-bold bg-darkbg text-gray-400 border border-borderbg">${idx + 1}</span>`;
+                if (idx === 0) rankBadge = `<span class="w-6 h-6 flex items-center justify-center rounded-full text-xs font-bold bg-pink-500 text-darkbg shadow-sm">1</span>`;
+
+                return `
+                    <div class="p-3 bg-darkbg/70 border border-borderbg/80 rounded-xl space-y-2">
+                        <div class="flex items-center justify-between">
+                            <div class="flex items-center gap-2.5">
+                                ${rankBadge}
+                                <button onclick="filterByTerm('${escapeHtml(venue.name)}')" class="font-bold text-sm text-white hover:text-pink-400 hover:underline text-left cursor-pointer flex items-center gap-1.5 group">
+                                    <span>${escapeHtml(venue.name)}</span>
+                                    <i class="fa-solid fa-arrow-right-to-bracket text-xs opacity-0 group-hover:opacity-100 transition-opacity text-pink-400"></i>
+                                </button>
+                            </div>
+                            <button onclick="filterByTerm('${escapeHtml(venue.name)}')" class="text-sm font-extrabold text-pink-400 hover:underline cursor-pointer">
+                                ${venue.count} 次
+                            </button>
+                        </div>
+                        <div class="w-full bg-gray-800 h-2 rounded-full overflow-hidden">
+                            <div class="bg-gradient-to-r from-pink-500 to-rose-400 h-full rounded-full transition-all duration-500" style="width: ${percent}%"></div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function renderYearlyStats() {
+            const grid = document.getElementById('yearlyStatsGrid');
+            const yearlyMap = {};
+
+            allConcerts.forEach(item => {
+                const year = item.year || '未知';
+                if (!yearlyMap[year]) {
+                    yearlyMap[year] = { count: 0, totalPrice: 0 };
+                }
+                yearlyMap[year].count += 1;
+                yearlyMap[year].totalPrice += item.price;
+            });
+
+            const sortedYears = Object.keys(yearlyMap).sort((a,b) => b - a);
+
+            if (sortedYears.length === 0) {
+                grid.innerHTML = '<p class="text-center text-sm text-gray-500 col-span-full py-4">尚無年份統計資料</p>';
+                return;
+            }
+
+            grid.innerHTML = sortedYears.map(year => {
+                const data = yearlyMap[year];
+                return `
+                    <div class="bg-darkbg/80 border border-borderbg/80 rounded-xl p-4 flex flex-col justify-between space-y-3">
+                        <div class="flex items-center justify-between">
+                            <span class="text-lg font-black text-white">${year} 年</span>
+                            <span class="text-xs bg-brand-500/10 text-brand-400 px-2.5 py-0.5 rounded-full border border-brand-500/20 font-bold">
+                                ${data.count} 場演出
+                            </span>
+                        </div>
+                        <div class="pt-2 border-t border-borderbg/50 flex items-center justify-between text-xs">
+                            <span class="text-gray-400">當年度花費</span>
+                            <span class="font-bold text-emerald-400 text-sm">
+                                ${data.totalPrice > 0 ? 'NT$ ' + data.totalPrice.toLocaleString() : '免費 / 0'}
+                            </span>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        // Helper: Escape HTML to prevent XSS
+        function escapeHtml(str) {
+            if (!str) return '';
+            return String(str)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#039;');
+        }
+    </script>
+</body>
+</html>
