@@ -10,6 +10,7 @@
 
     <!-- Tailwind CSS CDN -->
     <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.1/dist/chart.umd.min.js"></script>
     <script>
         tailwind.config = {
             darkMode: 'class',
@@ -136,8 +137,19 @@
             <!-- ================= VIEW 1: CONCERT LIST VIEW ================= -->
             <div id="viewConcerts" class="space-y-6">
 
-                <!-- Summary Overview Cards -->
-                <div class="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4">
+                <!-- Collapsible Overview -->
+                <section class="space-y-3">
+                    <button type="button" data-overview-toggle id="overviewToggle" aria-expanded="true" aria-controls="overviewCollapsibleContent" class="w-full bg-darkcard border border-borderbg/80 hover:border-brand-500/50 rounded-2xl px-4 py-3 flex items-center justify-between gap-3 text-left transition focus:outline-none focus:ring-2 focus:ring-brand-500/60 cursor-pointer">
+                        <span class="flex items-center gap-2 font-bold text-white">
+                            <i class="fa-solid fa-chart-simple text-brand-500"></i>
+                            總覽
+                        </span>
+                        <i data-overview-chevron class="fa-solid fa-chevron-up text-sm text-gray-400" aria-hidden="true"></i>
+                    </button>
+
+                    <div id="overviewCollapsibleContent" class="space-y-6">
+                        <!-- Summary Overview Cards -->
+                        <div class="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4">
                     <div class="bg-darkcard border border-borderbg/80 rounded-2xl p-4 flex flex-col justify-between">
                         <span class="text-xs text-gray-400 font-medium">參戰總場次</span>
                         <div class="mt-2 flex items-baseline justify-between">
@@ -165,7 +177,30 @@
                             <span class="text-xs text-amber-500 font-semibold">位</span>
                         </div>
                     </div>
-                </div>
+                        </div>
+
+                        <!-- Annual Trend Chart -->
+                        <div class="bg-darkcard border border-borderbg/80 rounded-2xl p-5 space-y-4">
+                    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-borderbg/60 pb-3">
+                        <div>
+                            <h3 class="text-base font-bold text-white flex items-center gap-2">
+                                <i class="fa-solid fa-chart-line text-brand-500"></i>
+                                年度趨勢
+                            </h3>
+                            <p class="text-xs text-gray-400 mt-0.5">依完整演唱會紀錄統計，不受列表篩選影響</p>
+                        </div>
+                        <div class="flex bg-darkbg p-1 rounded-xl border border-borderbg/80 text-xs self-start sm:self-auto" aria-label="年度趨勢顯示模式">
+                            <button type="button" data-annual-trend-mode="count" class="annual-trend-mode-btn px-3 py-1.5 rounded-lg font-medium transition bg-brand-600 text-white" aria-pressed="true">場次</button>
+                            <button type="button" data-annual-trend-mode="spend" class="annual-trend-mode-btn px-3 py-1.5 rounded-lg font-medium transition text-gray-400 hover:text-white" aria-pressed="false">花費</button>
+                        </div>
+                    </div>
+                    <div id="annualTrendChartContainer" class="relative h-64 sm:h-72 w-full min-w-0">
+                        <canvas id="annualTrendChartCanvas" aria-label="年度演唱會場次與花費趨勢圖" role="img"></canvas>
+                    </div>
+                    <p id="annualTrendEmpty" class="hidden text-center text-sm text-gray-500 py-10">暫無年度資料</p>
+                        </div>
+                    </div>
+                </section>
 
                 <!-- Search & Filters Toolbar -->
                 <div class="bg-darkcard border border-borderbg/80 rounded-2xl p-4 space-y-3 shadow-lg">
@@ -206,7 +241,7 @@
 
                     <!-- Active Filter Notice -->
                     <div id="filterInfo" class="hidden flex items-center justify-between text-xs text-gray-400 pt-1 border-t border-borderbg/40">
-                        <span>目前顯示：<strong id="filterResultCount" class="text-brand-500">0</strong> 場符合的項目</span>
+                        <span>目前顯示：<strong id="filterResultCount" class="text-brand-500">0</strong> 場符合的項目 <span id="artistFilterInfo" class="hidden ml-2 text-amber-400"></span></span>
                         <button onclick="resetFilters()" class="text-gray-400 hover:text-white underline text-xs">清除所有篩選</button>
                     </div>
                 </div>
@@ -308,13 +343,21 @@
         // Google Sheet Config
         const SPREADSHEET_ID = '1-19Op-TzNwyTc-mSJ7soGQWda3P38l-GNqXHmRn0xE4';
         const SHEET_CSV_URL = `https://docs.google.com/spreadsheets/d/${SPREADSHEET_ID}/export?format=csv`;
+        const ARTIST_ALIAS_SHEET = 'ARTIST_ALIAS';
+        const ARTIST_ALIAS_CSV_URL = `https://docs.google.com/spreadsheets/d/${SPREADSHEET_ID}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(ARTIST_ALIAS_SHEET)}`;
 
         // State Variables
         let allConcerts = [];
         let filteredConcerts = [];
+        let artistAliasMap = new Map();
+        let activeArtistFilter = null;
         let activeRoleFilter = 'ALL'; // ALL, MAIN, GUEST, MULTI
         let currentView = 'concerts';
         let jsonpTimeoutTimer = null;
+        let artistAliasLoadPromise = Promise.resolve();
+        let annualTrendMode = 'count';
+        let annualTrendChart = null;
+        let isOverviewCollapsed = false;
 
         // DOM Elements
         const loadingState = document.getElementById('loadingState');
@@ -330,12 +373,12 @@
 
         // Sample Backup Data (Fallback if completely offline or sheet unreachable)
         const sampleData = [
-            { id: 1, date: '2023.6.10', year: '2023', location: '台北小巨蛋', mainArtist: '張清芳', event: '張清芳 Stella《TimeLESS》演唱會2023', price: 2200, priceRaw: '2,200', guest: '瘦子E.SO、陳嘉樺ELLA', multiArtist: '' },
-            { id: 2, date: '2023.11.11', year: '2023', location: '高雄國家體育場', mainArtist: 'Coldplay', event: 'Coldplay： Music Of The Spheres World Tour', price: 3800, priceRaw: '3,800', guest: '告五人', multiArtist: '' },
-            { id: 3, date: '2022.12.31', year: '2022', location: '桃園市立田徑場', mainArtist: '五月天', event: '五月天 MAYDAY 諾亞方舟 10週年進化復刻限定版演唱會', price: 2800, priceRaw: '2,800', guest: '品冠', multiArtist: '' },
-            { id: 4, date: '2020.12.01', year: '2020', location: '台中文心森林公園', mainArtist: '多位藝人', event: '2020 搖滾台中 Rock In Taichung', price: 0, priceRaw: '0', guest: '', multiArtist: '滅火器、鄭宜農、告五人、海豚刑警' },
-            { id: 5, date: '2020.12.02', year: '2020', location: '台中文心森林公園', mainArtist: '多位藝人', event: '2020 搖滾台中 Rock In Taichung Day 2', price: 0, priceRaw: '0', guest: '', multiArtist: '血肉果汁機、美秀集團、老王樂隊' },
-            { id: 6, date: '2019.04.14', year: '2019', location: 'Legacy Taipei', mainArtist: '草東沒有派對', event: '草東沒有派對《不萬能喜劇》專場', price: 1200, priceRaw: '1,200', guest: '', multiArtist: '' }
+            { id: 1, date: '2023.6.10', dateTimestamp: 1686355200000, year: '2023', location: '台北小巨蛋', mainArtist: '張清芳', event: '張清芳 Stella《TimeLESS》演唱會2023', price: 2200, priceRaw: '2,200', guest: '瘦子E.SO、陳嘉樺ELLA', multiArtist: '' },
+            { id: 2, date: '2023.11.11', dateTimestamp: 1699660800000, year: '2023', location: '高雄國家體育場', mainArtist: 'Coldplay', event: 'Coldplay： Music Of The Spheres World Tour', price: 3800, priceRaw: '3,800', guest: '告五人', multiArtist: '' },
+            { id: 3, date: '2022.12.31', dateTimestamp: 1672444800000, year: '2022', location: '桃園市立田徑場', mainArtist: '五月天', event: '五月天 MAYDAY 諾亞方舟 10週年進化復刻限定版演唱會', price: 2800, priceRaw: '2,800', guest: '品冠', multiArtist: '' },
+            { id: 4, date: '2020.12.01', dateTimestamp: 1606780800000, year: '2020', location: '台中文心森林公園', mainArtist: '多位藝人', event: '2020 搖滾台中 Rock In Taichung', price: 0, priceRaw: '0', guest: '', multiArtist: '滅火器、鄭宜農、告五人、海豚刑警' },
+            { id: 5, date: '2020.12.02', dateTimestamp: 1606867200000, year: '2020', location: '台中文心森林公園', mainArtist: '多位藝人', event: '2020 搖滾台中 Rock In Taichung Day 2', price: 0, priceRaw: '0', guest: '', multiArtist: '血肉果汁機、美秀集團、老王樂隊' },
+            { id: 6, date: '2019.04.14', dateTimestamp: 1555200000000, year: '2019', location: 'Legacy Taipei', mainArtist: '草東沒有派對', event: '草東沒有派對《不萬能喜劇》專場', price: 1200, priceRaw: '1,200', guest: '', multiArtist: '' }
         ];
 
         // Init on page load
@@ -353,6 +396,20 @@
             selectYear.addEventListener('change', applyFilters);
             selectType.addEventListener('change', applyFilters);
             selectSort.addEventListener('change', applyFilters);
+            mainContent.addEventListener('click', event => {
+                const filterButton = event.target.closest('[data-filter-artist], [data-filter-term], [data-annual-trend-mode], [data-overview-toggle]');
+                if (filterButton && mainContent.contains(filterButton)) {
+                    if (filterButton.dataset.overviewToggle !== undefined) {
+                        toggleOverview();
+                    } else if (filterButton.dataset.annualTrendMode !== undefined) {
+                        setAnnualTrendMode(filterButton.dataset.annualTrendMode);
+                    } else if (filterButton.dataset.filterArtist !== undefined) {
+                        filterByArtist(filterButton.dataset.filterArtist);
+                    } else {
+                        filterByTerm(filterButton.dataset.filterTerm);
+                    }
+                }
+            });
         }
 
         /**
@@ -364,6 +421,7 @@
          */
         function fetchSheetData() {
             showLoading("正在同步 Google Sheets 演唱會資料...");
+            artistAliasLoadPromise = fetchArtistAliasData();
 
             // Strategy 1: JSONP via Google Sheet GViz API (Bypasses file:// CORS restrictions completely)
             fetchSheetDataJSONP();
@@ -374,10 +432,15 @@
             const scriptId = 'gviz_jsonp_script';
             const oldScript = document.getElementById(scriptId);
             if (oldScript) oldScript.remove();
+            if (jsonpTimeoutTimer) {
+                clearTimeout(jsonpTimeoutTimer);
+                jsonpTimeoutTimer = null;
+            }
 
             // Set global JSONP callback
             window.handleGvizResponse = function(response) {
                 if (jsonpTimeoutTimer) clearTimeout(jsonpTimeoutTimer);
+                jsonpTimeoutTimer = null;
                 delete window.handleGvizResponse;
 
                 const scriptTag = document.getElementById(scriptId);
@@ -393,6 +456,7 @@
 
             // Set timeout fallback to Strategy 2 if JSONP takes too long
             jsonpTimeoutTimer = setTimeout(() => {
+                jsonpTimeoutTimer = null;
                 console.warn('GViz JSONP timed out, switching to fetch CSV...');
                 delete window.handleGvizResponse;
                 const scriptTag = document.getElementById(scriptId);
@@ -406,6 +470,8 @@
             script.src = `https://docs.google.com/spreadsheets/d/${SPREADSHEET_ID}/gviz/tq?tqx=responseHandler:handleGvizResponse`;
             script.onerror = function() {
                 if (jsonpTimeoutTimer) clearTimeout(jsonpTimeoutTimer);
+                jsonpTimeoutTimer = null;
+                delete window.handleGvizResponse;
                 console.warn('Script injection failed, switching to fetch CSV...');
                 fetchSheetDataCSV();
             };
@@ -433,6 +499,245 @@
             }
         }
 
+        function fetchArtistAliasData() {
+            artistAliasMap = new Map();
+
+            return new Promise(resolve => {
+                const scriptId = 'artist_alias_jsonp_script';
+                const callbackName = 'handleArtistAliasResponse';
+                let timeoutTimer = null;
+                let settled = false;
+                let fallbackStarted = false;
+
+                const cleanup = () => {
+                    if (timeoutTimer) clearTimeout(timeoutTimer);
+                    timeoutTimer = null;
+                    delete window[callbackName];
+                    const scriptTag = document.getElementById(scriptId);
+                    if (scriptTag) scriptTag.remove();
+                };
+
+                const finish = () => {
+                    if (settled) return;
+                    settled = true;
+                    cleanup();
+                    resolve();
+                };
+
+                const fallbackToCSV = async (reason, error = null) => {
+                    if (settled || fallbackStarted) return;
+                    fallbackStarted = true;
+                    cleanup();
+                    console.warn(`[Artist Alias] GViz ${reason}; attempting CSV fallback.`, error || '');
+                    try {
+                        await fetchArtistAliasCSV();
+                    } catch (error) {
+                        artistAliasMap = new Map();
+                        console.warn('[Artist Alias] All load paths failed; using raw artist names with 0 mappings.', error);
+                    }
+                    finish();
+                };
+
+                const oldScript = document.getElementById(scriptId);
+                if (oldScript) oldScript.remove();
+
+                window[callbackName] = response => {
+                    if (response && response.status === 'ok' && response.table) {
+                        try {
+                            parseArtistAliasGvizData(response.table);
+                            console.info(`[Artist Alias] Loaded successfully via GViz JSONP: ${artistAliasMap.size} mappings${artistAliasMap.size === 0 ? ' (empty Map)' : ''}.`);
+                            finish();
+                        } catch (error) {
+                            fallbackToCSV(`parsing failed: ${error.message}`, error);
+                        }
+                    } else {
+                        fallbackToCSV('request failed');
+                    }
+                };
+
+                timeoutTimer = setTimeout(() => fallbackToCSV('request timed out'), 3500);
+
+                const script = document.createElement('script');
+                script.id = scriptId;
+                script.src = `https://docs.google.com/spreadsheets/d/${SPREADSHEET_ID}/gviz/tq?sheet=${encodeURIComponent(ARTIST_ALIAS_SHEET)}&tqx=responseHandler:${callbackName}`;
+                script.onerror = () => fallbackToCSV('script loading failed');
+                document.head.appendChild(script);
+            });
+        }
+
+        async function fetchArtistAliasCSV() {
+            try {
+                const response = await fetch(ARTIST_ALIAS_CSV_URL);
+                if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                const csvText = await response.text();
+                parseArtistAliasCSVData(csvText);
+                console.info(`[Artist Alias] Loaded successfully via CSV: ${artistAliasMap.size} mappings${artistAliasMap.size === 0 ? ' (empty Map)' : ''}.`);
+                return;
+            } catch (error) {
+                console.warn('[Artist Alias] Direct CSV failed; attempting AllOrigins fallback.', error);
+                const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(ARTIST_ALIAS_CSV_URL)}`;
+                try {
+                    const response = await fetch(proxyUrl);
+                    if (!response.ok) throw new Error(`AllOrigins HTTP ${response.status}`);
+                    const csvText = await response.text();
+                    parseArtistAliasCSVData(csvText);
+                    console.info(`[Artist Alias] Loaded successfully via AllOrigins: ${artistAliasMap.size} mappings${artistAliasMap.size === 0 ? ' (empty Map)' : ''}.`);
+                } catch (proxyError) {
+                    console.warn('[Artist Alias] AllOrigins failed.', proxyError);
+                    throw proxyError;
+                }
+            }
+        }
+
+        function normalizeArtistLookupKey(name) {
+            return String(name || '').trim().toLowerCase();
+        }
+
+        function normalizeArtistName(name) {
+            const trimmedName = String(name || '').trim();
+            if (!trimmedName) return '';
+            return artistAliasMap.get(normalizeArtistLookupKey(trimmedName)) || trimmedName;
+        }
+
+        function splitArtistNames(names) {
+            return String(names || '').split(/[,、]/).map(name => name.trim()).filter(Boolean);
+        }
+
+        function buildArtistAliasMap(rows) {
+            const nextAliasMap = new Map();
+
+            const addMapping = (artistName, canonicalName) => {
+                const lookupKey = normalizeArtistLookupKey(artistName);
+                if (!lookupKey) return;
+
+                const existingCanonical = nextAliasMap.get(lookupKey);
+                if (existingCanonical && existingCanonical !== canonicalName) {
+                    console.warn(`ARTIST_ALIAS conflict for "${artistName}": keeping "${existingCanonical}", ignoring "${canonicalName}".`);
+                    return;
+                }
+                nextAliasMap.set(lookupKey, canonicalName);
+            };
+
+            rows.forEach(row => {
+                const canonicalName = String(row.canonicalName || '').trim();
+                const alias = String(row.alias || '').trim();
+                if (!canonicalName) return;
+
+                addMapping(canonicalName, canonicalName);
+                if (alias) addMapping(alias, canonicalName);
+            });
+
+            artistAliasMap = nextAliasMap;
+        }
+
+        function resolveArtistAliasColumns(headers) {
+            const normalizedHeaders = headers.map(header => String(header || '').trim().toLowerCase().replace(/\s+/g, '_'));
+            return {
+                canonicalName: normalizedHeaders.findIndex(header => header === 'canonical_name'),
+                alias: normalizedHeaders.findIndex(header => header === 'alias')
+            };
+        }
+
+        function parseArtistAliasGvizData(table) {
+            if (!table.cols || !table.rows) throw new Error('Invalid ARTIST_ALIAS GViz data');
+
+            const getRowCellValue = (row, index) => {
+                if (!row || !row.c || !row.c[index]) return '';
+                const cell = row.c[index];
+                return String(cell.f ?? cell.v ?? '').trim();
+            };
+
+            let columns = resolveArtistAliasColumns(table.cols.map(column => column.label || column.id || ''));
+            let dataRowStartIndex = 0;
+
+            if (columns.canonicalName === -1 || columns.alias === -1) {
+                const firstRowHeaders = table.rows[0]
+                    ? table.cols.map((_, index) => getRowCellValue(table.rows[0], index))
+                    : [];
+                columns = resolveArtistAliasColumns(firstRowHeaders);
+                dataRowStartIndex = 1;
+            }
+
+            if (columns.canonicalName === -1 || columns.alias === -1) throw new Error('Missing ARTIST_ALIAS columns');
+
+            const rows = table.rows.slice(dataRowStartIndex).map(row => ({
+                canonicalName: getRowCellValue(row, columns.canonicalName),
+                alias: getRowCellValue(row, columns.alias)
+            }));
+
+            buildArtistAliasMap(rows);
+        }
+
+        function parseArtistAliasCSVData(csvText) {
+            const lines = parseCSVRows(csvText);
+            if (lines.length < 2) throw new Error('ARTIST_ALIAS CSV is empty');
+
+            const columns = resolveArtistAliasColumns(lines[0]);
+            if (columns.canonicalName === -1 || columns.alias === -1) throw new Error('Missing ARTIST_ALIAS columns');
+
+            buildArtistAliasMap(lines.slice(1).map(row => ({
+                canonicalName: row[columns.canonicalName] || '',
+                alias: row[columns.alias] || ''
+            })));
+        }
+
+        function resolveColumnIndexes(headers) {
+            return {
+                date: headers.findIndex(h => h.includes('date') || h.includes('日期')),
+                location: headers.findIndex(h => h.includes('location') || h.includes('地點') || h.includes('場地')),
+                mainArtist: headers.findIndex(h => h.includes('main') || h.includes('主唱') || h.includes('歌手')),
+                event: headers.findIndex(h => h.includes('event') || h.includes('活動') || h.includes('演唱會')),
+                price: headers.findIndex(h => h.includes('price') || h.includes('票價') || h.includes('價格')),
+                guest: headers.findIndex(h => h.includes('guset') || h.includes('guest') || h.includes('嘉賓')),
+                multiArtist: headers.findIndex(h => h.includes('multi') || h.includes('陣容') || h.includes('音樂節'))
+            };
+        }
+
+        function parseConcertDate(rawDate) {
+            const dateText = String(rawDate || '').trim();
+            let match = dateText.match(/^(\d{4})[.\/-](\d{1,2})[.\/-](\d{1,2})/);
+
+            if (!match) {
+                const googleDateMatch = dateText.match(/^Date\((\d{4}),\s*(\d{1,2}),\s*(\d{1,2})/);
+                if (googleDateMatch) {
+                    match = [googleDateMatch[0], googleDateMatch[1], Number(googleDateMatch[2]) + 1, googleDateMatch[3]];
+                }
+            }
+
+            if (!match) return null;
+
+            const year = Number(match[1]);
+            const month = Number(match[2]);
+            const day = Number(match[3]);
+            const timestamp = Date.UTC(year, month - 1, day);
+            const parsedDate = new Date(timestamp);
+
+            if (parsedDate.getUTCFullYear() !== year || parsedDate.getUTCMonth() !== month - 1 || parsedDate.getUTCDate() !== day) {
+                return null;
+            }
+            return timestamp;
+        }
+
+        function normalizeConcert(rawConcert) {
+            const date = String(rawConcert.date || '').trim();
+            const priceRaw = String(rawConcert.priceRaw || '').trim();
+            const yearMatch = date.match(/\d{4}/);
+
+            return {
+                id: rawConcert.id,
+                date,
+                dateTimestamp: parseConcertDate(date),
+                year: yearMatch ? yearMatch[0] : '未知',
+                location: String(rawConcert.location || '').trim() || '未標示',
+                mainArtist: String(rawConcert.mainArtist || '').trim() || '未標示',
+                event: String(rawConcert.event || '').trim() || '演唱會演出',
+                price: parseInt(priceRaw.replace(/[^\d]/g, ''), 10) || 0,
+                priceRaw,
+                guest: String(rawConcert.guest || '').trim(),
+                multiArtist: String(rawConcert.multiArtist || '').trim()
+            };
+        }
+
         // Parse GViz Table Object (JSONP)
         function parseGvizData(table) {
             if (!table.cols || !table.rows) {
@@ -442,13 +747,7 @@
 
             const headers = table.cols.map(col => (col.label || col.id || '').trim().toLowerCase());
             
-            const dateIdx = headers.findIndex(h => h.includes('date') || h.includes('日期'));
-            const locIdx = headers.findIndex(h => h.includes('location') || h.includes('地點') || h.includes('場地'));
-            const mainIdx = headers.findIndex(h => h.includes('main') || h.includes('主唱') || h.includes('歌手'));
-            const eventIdx = headers.findIndex(h => h.includes('event') || h.includes('活動') || h.includes('演唱會'));
-            const priceIdx = headers.findIndex(h => h.includes('price') || h.includes('票價') || h.includes('價格'));
-            const guestIdx = headers.findIndex(h => h.includes('guset') || h.includes('guest') || h.includes('嘉賓'));
-            const multiIdx = headers.findIndex(h => h.includes('multi') || h.includes('陣容') || h.includes('音樂節'));
+            const columns = resolveColumnIndexes(headers);
 
             const parsed = [];
 
@@ -463,27 +762,19 @@
                     return '';
                 };
 
-                const rawDate = getCellVal(dateIdx);
+                const rawDate = getCellVal(columns.date);
                 if (!rawDate) return;
 
-                const yearMatch = rawDate.match(/\d{4}/);
-                const year = yearMatch ? yearMatch[0] : '未知';
-
-                const rawPrice = getCellVal(priceIdx);
-                const cleanPrice = parseInt(rawPrice.replace(/[^\d]/g, ''), 10) || 0;
-
-                parsed.push({
+                parsed.push(normalizeConcert({
                     id: idx + 1,
                     date: rawDate,
-                    year: year,
-                    location: getCellVal(locIdx) || '未標示',
-                    mainArtist: getCellVal(mainIdx) || '未標示',
-                    event: getCellVal(eventIdx) || '演唱會演出',
-                    price: cleanPrice,
-                    priceRaw: rawPrice,
-                    guest: getCellVal(guestIdx),
-                    multiArtist: getCellVal(multiIdx)
-                });
+                    location: getCellVal(columns.location),
+                    mainArtist: getCellVal(columns.mainArtist),
+                    event: getCellVal(columns.event),
+                    priceRaw: getCellVal(columns.price),
+                    guest: getCellVal(columns.guest),
+                    multiArtist: getCellVal(columns.multiArtist)
+                }));
             });
 
             if (parsed.length === 0) {
@@ -491,12 +782,10 @@
                 return;
             }
 
-            allConcerts = parsed;
-            initApp();
+            completeConcertDataLoad(parsed);
         }
 
-        // CSV Parser Fallback (For fetch requests)
-        function parseCSVData(csvText) {
+        function parseCSVRows(csvText) {
             const lines = [];
             let row = [];
             let inQuotes = false;
@@ -531,6 +820,13 @@
                 if (row.some(cell => cell.length > 0)) lines.push(row);
             }
 
+            return lines;
+        }
+
+        // CSV Parser Fallback (For fetch requests)
+        function parseCSVData(csvText) {
+            const lines = parseCSVRows(csvText);
+
             if (lines.length < 2) {
                 showError("讀取到的試算表內容為空。");
                 return;
@@ -538,13 +834,7 @@
 
             const headers = lines[0].map(h => h.trim().toLowerCase());
             
-            const dateIdx = headers.findIndex(h => h.includes('date') || h.includes('日期'));
-            const locIdx = headers.findIndex(h => h.includes('location') || h.includes('地點') || h.includes('場地'));
-            const mainIdx = headers.findIndex(h => h.includes('main') || h.includes('主唱') || h.includes('歌手'));
-            const eventIdx = headers.findIndex(h => h.includes('event') || h.includes('活動') || h.includes('演唱會'));
-            const priceIdx = headers.findIndex(h => h.includes('price') || h.includes('票價') || h.includes('價格'));
-            const guestIdx = headers.findIndex(h => h.includes('guset') || h.includes('guest') || h.includes('嘉賓'));
-            const multiIdx = headers.findIndex(h => h.includes('multi') || h.includes('陣容') || h.includes('音樂節'));
+            const columns = resolveColumnIndexes(headers);
 
             const parsed = [];
 
@@ -552,27 +842,19 @@
                 const r = lines[i];
                 if (!r || r.length === 0) continue;
 
-                const rawDate = (dateIdx !== -1 && r[dateIdx]) ? r[dateIdx] : '';
+                const rawDate = (columns.date !== -1 && r[columns.date]) ? r[columns.date] : '';
                 if (!rawDate) continue;
 
-                const yearMatch = rawDate.match(/\d{4}/);
-                const year = yearMatch ? yearMatch[0] : '未知';
-
-                const rawPrice = (priceIdx !== -1 && r[priceIdx]) ? r[priceIdx] : '0';
-                const cleanPrice = parseInt(rawPrice.replace(/[^\d]/g, ''), 10) || 0;
-
-                parsed.push({
+                parsed.push(normalizeConcert({
                     id: i,
                     date: rawDate,
-                    year: year,
-                    location: (locIdx !== -1 && r[locIdx]) ? r[locIdx] : '未標示',
-                    mainArtist: (mainIdx !== -1 && r[mainIdx]) ? r[mainIdx] : '未標示',
-                    event: (eventIdx !== -1 && r[eventIdx]) ? r[eventIdx] : '演唱會演出',
-                    price: cleanPrice,
-                    priceRaw: rawPrice,
-                    guest: (guestIdx !== -1 && r[guestIdx]) ? r[guestIdx] : '',
-                    multiArtist: (multiIdx !== -1 && r[multiIdx]) ? r[multiIdx] : ''
-                });
+                    location: (columns.location !== -1 && r[columns.location]) ? r[columns.location] : '',
+                    mainArtist: (columns.mainArtist !== -1 && r[columns.mainArtist]) ? r[columns.mainArtist] : '',
+                    event: (columns.event !== -1 && r[columns.event]) ? r[columns.event] : '',
+                    priceRaw: (columns.price !== -1 && r[columns.price]) ? r[columns.price] : '',
+                    guest: (columns.guest !== -1 && r[columns.guest]) ? r[columns.guest] : '',
+                    multiArtist: (columns.multiArtist !== -1 && r[columns.multiArtist]) ? r[columns.multiArtist] : ''
+                }));
             }
 
             if (parsed.length === 0) {
@@ -580,12 +862,18 @@
                 return;
             }
 
-            allConcerts = parsed;
+            completeConcertDataLoad(parsed);
+        }
+
+        async function completeConcertDataLoad(parsedConcerts) {
+            allConcerts = parsedConcerts;
+            await artistAliasLoadPromise;
             initApp();
         }
 
-        function loadSampleData() {
+        async function loadSampleData() {
             allConcerts = [...sampleData];
+            await artistAliasLoadPromise;
             initApp();
         }
 
@@ -612,6 +900,7 @@
             loadingState.classList.add('hidden');
             errorState.classList.add('hidden');
             mainContent.classList.remove('hidden');
+            if (!isOverviewCollapsed && annualTrendChart) annualTrendChart.resize();
         }
 
         // Populate Year Options
@@ -625,6 +914,7 @@
 
         // View Switching (SPA Navigation)
         function switchView(view) {
+            const viewChanged = currentView !== view;
             currentView = view;
             const tabConcerts = document.getElementById('tabConcerts');
             const tabStats = document.getElementById('tabStats');
@@ -636,6 +926,7 @@
                 tabStats.classList.remove('bg-darkcard', 'text-white', 'tab-active');
                 viewConcerts.classList.remove('hidden');
                 viewStats.classList.add('hidden');
+                if (viewChanged && annualTrendChart && !isOverviewCollapsed) annualTrendChart.resize();
             } else {
                 tabStats.classList.add('bg-darkcard', 'text-white', 'tab-active');
                 tabConcerts.classList.remove('bg-darkcard', 'text-white', 'tab-active');
@@ -645,12 +936,23 @@
             }
         }
 
-        // Quick Filter by clicking any Artist, Guest, or Venue
+        // Quick contains filter for non-artist terms such as venues
         function filterByTerm(term) {
             if (!term) return;
             switchView('concerts');
             searchInput.value = term;
             btnClearSearch.classList.remove('hidden');
+            applyFilters();
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+
+        function filterByArtist(artistName) {
+            const canonicalName = normalizeArtistName(artistName);
+            if (!canonicalName) return;
+            searchInput.value = '';
+            btnClearSearch.classList.add('hidden');
+            activeArtistFilter = canonicalName;
+            switchView('concerts');
             applyFilters();
             window.scrollTo({ top: 0, behavior: 'smooth' });
         }
@@ -667,8 +969,14 @@
             selectYear.value = 'ALL';
             selectType.value = 'ALL';
             selectSort.value = 'DATE_DESC';
+            activeArtistFilter = null;
             btnClearSearch.classList.add('hidden');
             applyFilters();
+        }
+
+        function concertHasArtist(item, canonicalArtistName) {
+            const artistNames = [item.mainArtist, ...splitArtistNames(item.guest), ...splitArtistNames(item.multiArtist)];
+            return artistNames.some(name => normalizeArtistName(name) === canonicalArtistName);
         }
 
         // Apply Filters and Sorting
@@ -695,15 +1003,21 @@
                     matchType = !!item.multiArtist;
                 }
 
-                return matchQuery && matchYear && matchType;
+                const matchArtist = !activeArtistFilter || concertHasArtist(item, activeArtistFilter);
+
+                return matchQuery && matchYear && matchType && matchArtist;
             });
 
             // Sorting logic
             filteredConcerts.sort((a, b) => {
                 if (sortVal === 'DATE_DESC') {
-                    return b.date.localeCompare(a.date);
+                    if (a.dateTimestamp === null) return b.dateTimestamp === null ? 0 : 1;
+                    if (b.dateTimestamp === null) return -1;
+                    return b.dateTimestamp - a.dateTimestamp;
                 } else if (sortVal === 'DATE_ASC') {
-                    return a.date.localeCompare(b.date);
+                    if (a.dateTimestamp === null) return b.dateTimestamp === null ? 0 : 1;
+                    if (b.dateTimestamp === null) return -1;
+                    return a.dateTimestamp - b.dateTimestamp;
                 } else if (sortVal === 'PRICE_DESC') {
                     return b.price - a.price;
                 } else if (sortVal === 'PRICE_ASC') {
@@ -715,10 +1029,14 @@
             // Update UI
             renderOverviewCards();
             renderConcertCards();
+            renderAnnualTrendChart(buildAnnualStats(filteredConcerts, true));
 
-            const isFiltered = query || yearVal !== 'ALL' || typeVal !== 'ALL';
+            const isFiltered = query || yearVal !== 'ALL' || typeVal !== 'ALL' || activeArtistFilter;
             document.getElementById('filterInfo').classList.toggle('hidden', !isFiltered);
             document.getElementById('filterResultCount').textContent = filteredConcerts.length;
+            const artistFilterInfo = document.getElementById('artistFilterInfo');
+            artistFilterInfo.textContent = activeArtistFilter ? `歌手：${activeArtistFilter}` : '';
+            artistFilterInfo.classList.toggle('hidden', !activeArtistFilter);
         }
 
         // Render Summary Overview Top Cards
@@ -748,12 +1066,18 @@
             const artistSet = new Set();
             filteredConcerts.forEach(item => {
                 if (item.mainArtist && item.mainArtist !== '未標示' && item.mainArtist !== '多位藝人') {
-                    artistSet.add(item.mainArtist);
+                    artistSet.add(normalizeArtistName(item.mainArtist));
+                }
+                if (item.guest) {
+                    splitArtistNames(item.guest).forEach(name => {
+                        const canonicalName = normalizeArtistName(name);
+                        if (canonicalName && canonicalName !== '未標示' && canonicalName !== '多位藝人') artistSet.add(canonicalName);
+                    });
                 }
                 if (item.multiArtist) {
-                    item.multiArtist.split(/[,、]/).forEach(a => {
-                        const trimmed = a.trim();
-                        if (trimmed) artistSet.add(trimmed);
+                    splitArtistNames(item.multiArtist).forEach(name => {
+                        const canonicalName = normalizeArtistName(name);
+                        if (canonicalName && canonicalName !== '未標示' && canonicalName !== '多位藝人') artistSet.add(canonicalName);
                     });
                 }
             });
@@ -800,7 +1124,7 @@
                             <!-- Main Artist -->
                             <div class="flex items-center gap-2 mb-3">
                                 <i class="fa-solid fa-microphone text-xs text-brand-accent"></i>
-                                <button onclick="filterByTerm('${escapeHtml(item.mainArtist)}')" class="text-sm font-semibold text-gray-300 hover:text-brand-500 hover:underline transition text-left cursor-pointer">
+                                <button data-filter-artist="${escapeHtml(item.mainArtist)}" class="text-sm font-semibold text-gray-300 hover:text-brand-500 hover:underline transition text-left cursor-pointer">
                                     ${escapeHtml(item.mainArtist)}
                                 </button>
                             </div>
@@ -808,7 +1132,7 @@
                             <!-- Location -->
                             <div class="flex items-start gap-2 text-xs text-gray-400 mb-2">
                                 <i class="fa-solid fa-location-dot mt-0.5 text-pink-500"></i>
-                                <button onclick="filterByTerm('${escapeHtml(item.location)}')" class="hover:text-pink-400 hover:underline transition text-left cursor-pointer line-clamp-1">
+                                <button data-filter-term="${escapeHtml(item.location)}" class="hover:text-pink-400 hover:underline transition text-left cursor-pointer line-clamp-1">
                                     ${escapeHtml(item.location)}
                                 </button>
                             </div>
@@ -820,7 +1144,7 @@
                                         <i class="fa-solid fa-star text-amber-400 mr-1"></i> 特別嘉賓 (Guest):
                                     </span>
                                     <div class="flex flex-wrap gap-1.5">
-                                        ${item.guest.split(/[,、]/).map(g => `<button onclick="filterByTerm('${escapeHtml(g.trim())}')" class="px-2 py-0.5 rounded bg-amber-500/10 hover:bg-amber-500/30 text-amber-300 text-[11px] border border-amber-500/20 transition cursor-pointer">${escapeHtml(g.trim())}</button>`).join('')}
+                                        ${splitArtistNames(item.guest).map(name => `<button data-filter-artist="${escapeHtml(name)}" class="px-2 py-0.5 rounded bg-amber-500/10 hover:bg-amber-500/30 text-amber-300 text-[11px] border border-amber-500/20 transition cursor-pointer">${escapeHtml(name)}</button>`).join('')}
                                     </div>
                                 </div>
                             ` : ''}
@@ -832,7 +1156,7 @@
                                         <i class="fa-solid fa-users text-brand-500 mr-1"></i> 演出陣容 (Lineup):
                                     </span>
                                     <div class="flex flex-wrap gap-1.5">
-                                        ${item.multiArtist.split(/[,、]/).map(a => `<button onclick="filterByTerm('${escapeHtml(a.trim())}')" class="px-2 py-0.5 rounded bg-brand-500/10 hover:bg-brand-500/30 text-brand-300 text-[11px] border border-brand-500/20 transition cursor-pointer">${escapeHtml(a.trim())}</button>`).join('')}
+                                        ${splitArtistNames(item.multiArtist).map(name => `<button data-filter-artist="${escapeHtml(name)}" class="px-2 py-0.5 rounded bg-brand-500/10 hover:bg-brand-500/30 text-brand-300 text-[11px] border border-brand-500/20 transition cursor-pointer">${escapeHtml(name)}</button>`).join('')}
                                     </div>
                                 </div>
                             ` : ''}
@@ -878,44 +1202,28 @@
         function renderStatsView() {
             setArtistRoleFilter(activeRoleFilter);
             renderVenueRanking();
-            renderYearlyStats();
+            renderYearlyStats(buildAnnualStats(allConcerts));
         }
 
         function renderArtistRanking() {
             const list = document.getElementById('artistRankingList');
             const artistMap = {};
 
+            const addArtistAppearance = (rawName, role, showId) => {
+                const name = normalizeArtistName(rawName);
+                if (!name || name === '未標示' || name === '多位藝人') return;
+
+                if (!artistMap[name]) artistMap[name] = { name, main: 0, guest: 0, multi: 0, totalSet: new Set() };
+                artistMap[name][role] += 1;
+                artistMap[name].totalSet.add(showId);
+            };
+
             allConcerts.forEach(item => {
                 const showId = item.id;
 
-                if (item.mainArtist && item.mainArtist !== '未標示' && item.mainArtist !== '多位藝人') {
-                    const name = item.mainArtist.trim();
-                    if (!artistMap[name]) artistMap[name] = { name, main: 0, guest: 0, multi: 0, totalSet: new Set() };
-                    artistMap[name].main += 1;
-                    artistMap[name].totalSet.add(showId);
-                }
-
-                if (item.guest) {
-                    item.guest.split(/[,、]/).forEach(g => {
-                        const name = g.trim();
-                        if (name) {
-                            if (!artistMap[name]) artistMap[name] = { name, main: 0, guest: 0, multi: 0, totalSet: new Set() };
-                            artistMap[name].guest += 1;
-                            artistMap[name].totalSet.add(showId);
-                        }
-                    });
-                }
-
-                if (item.multiArtist) {
-                    item.multiArtist.split(/[,、]/).forEach(m => {
-                        const name = m.trim();
-                        if (name) {
-                            if (!artistMap[name]) artistMap[name] = { name, main: 0, guest: 0, multi: 0, totalSet: new Set() };
-                            artistMap[name].multi += 1;
-                            artistMap[name].totalSet.add(showId);
-                        }
-                    });
-                }
+                addArtistAppearance(item.mainArtist, 'main', showId);
+                splitArtistNames(item.guest).forEach(name => addArtistAppearance(name, 'guest', showId));
+                splitArtistNames(item.multiArtist).forEach(name => addArtistAppearance(name, 'multi', showId));
             });
 
             const artistList = Object.values(artistMap).map(a => {
@@ -954,13 +1262,13 @@
                         <div class="flex items-center justify-between">
                             <div class="flex items-center gap-2.5">
                                 ${rankBadge}
-                                <button onclick="filterByTerm('${escapeHtml(artist.name)}')" class="font-bold text-sm text-white hover:text-brand-500 hover:underline text-left cursor-pointer flex items-center gap-1.5 group">
+                                <button data-filter-artist="${escapeHtml(artist.name)}" class="font-bold text-sm text-white hover:text-brand-500 hover:underline text-left cursor-pointer flex items-center gap-1.5 group">
                                     <span>${escapeHtml(artist.name)}</span>
                                     <i class="fa-solid fa-arrow-right-to-bracket text-xs opacity-0 group-hover:opacity-100 transition-opacity text-brand-500"></i>
                                 </button>
                             </div>
                             <div class="text-right">
-                                <button onclick="filterByTerm('${escapeHtml(artist.name)}')" class="text-sm font-extrabold text-brand-500 hover:underline cursor-pointer">
+                                <button data-filter-artist="${escapeHtml(artist.name)}" class="text-sm font-extrabold text-brand-500 hover:underline cursor-pointer">
                                     ${artist.displayCount} 場
                                 </button>
                             </div>
@@ -1012,12 +1320,12 @@
                         <div class="flex items-center justify-between">
                             <div class="flex items-center gap-2.5">
                                 ${rankBadge}
-                                <button onclick="filterByTerm('${escapeHtml(venue.name)}')" class="font-bold text-sm text-white hover:text-pink-400 hover:underline text-left cursor-pointer flex items-center gap-1.5 group">
+                                <button data-filter-term="${escapeHtml(venue.name)}" class="font-bold text-sm text-white hover:text-pink-400 hover:underline text-left cursor-pointer flex items-center gap-1.5 group">
                                     <span>${escapeHtml(venue.name)}</span>
                                     <i class="fa-solid fa-arrow-right-to-bracket text-xs opacity-0 group-hover:opacity-100 transition-opacity text-pink-400"></i>
                                 </button>
                             </div>
-                            <button onclick="filterByTerm('${escapeHtml(venue.name)}')" class="text-sm font-extrabold text-pink-400 hover:underline cursor-pointer">
+                            <button data-filter-term="${escapeHtml(venue.name)}" class="text-sm font-extrabold text-pink-400 hover:underline cursor-pointer">
                                 ${venue.count} 次
                             </button>
                         </div>
@@ -1029,32 +1337,46 @@
             }).join('');
         }
 
-        function renderYearlyStats() {
-            const grid = document.getElementById('yearlyStatsGrid');
-            const yearlyMap = {};
+        function buildAnnualStats(concerts, fillMissingYears = false) {
+            const yearlyMap = new Map();
 
-            allConcerts.forEach(item => {
-                const year = item.year || '未知';
-                if (!yearlyMap[year]) {
-                    yearlyMap[year] = { count: 0, totalPrice: 0 };
-                }
-                yearlyMap[year].count += 1;
-                yearlyMap[year].totalPrice += item.price;
+            concerts.forEach(item => {
+                const year = String(item.year || '').trim();
+                if (!/^\d{4}$/.test(year)) return;
+                if (!yearlyMap.has(year)) yearlyMap.set(year, { year, count: 0, totalPrice: 0 });
+                const yearData = yearlyMap.get(year);
+                yearData.count += 1;
+                yearData.totalPrice += item.price;
             });
 
-            const sortedYears = Object.keys(yearlyMap).sort((a,b) => b - a);
+            const annualStats = [...yearlyMap.values()].sort((a, b) => Number(a.year) - Number(b.year));
+            if (!fillMissingYears || annualStats.length === 0) return annualStats;
 
-            if (sortedYears.length === 0) {
+            const minYear = Number(annualStats[0].year);
+            const maxYear = Number(annualStats[annualStats.length - 1].year);
+            const continuousAnnualStats = [];
+
+            for (let year = minYear; year <= maxYear; year += 1) {
+                const yearKey = String(year);
+                continuousAnnualStats.push(yearlyMap.get(yearKey) || { year: yearKey, count: 0, totalPrice: 0 });
+            }
+
+            return continuousAnnualStats;
+        }
+
+        function renderYearlyStats(annualStats) {
+            const grid = document.getElementById('yearlyStatsGrid');
+
+            if (annualStats.length === 0) {
                 grid.innerHTML = '<p class="text-center text-sm text-gray-500 col-span-full py-4">尚無年份統計資料</p>';
                 return;
             }
 
-            grid.innerHTML = sortedYears.map(year => {
-                const data = yearlyMap[year];
+            grid.innerHTML = [...annualStats].reverse().map(data => {
                 return `
                     <div class="bg-darkbg/80 border border-borderbg/80 rounded-xl p-4 flex flex-col justify-between space-y-3">
                         <div class="flex items-center justify-between">
-                            <span class="text-lg font-black text-white">${year} 年</span>
+                            <span class="text-lg font-black text-white">${data.year} 年</span>
                             <span class="text-xs bg-brand-500/10 text-brand-400 px-2.5 py-0.5 rounded-full border border-brand-500/20 font-bold">
                                 ${data.count} 場演出
                             </span>
@@ -1068,6 +1390,126 @@
                     </div>
                 `;
             }).join('');
+        }
+
+        function setAnnualTrendMode(mode) {
+            if (mode !== 'count' && mode !== 'spend') return;
+            annualTrendMode = mode;
+
+            document.querySelectorAll('[data-annual-trend-mode]').forEach(button => {
+                const isActive = button.dataset.annualTrendMode === annualTrendMode;
+                button.classList.toggle('bg-brand-600', isActive);
+                button.classList.toggle('text-white', isActive);
+                button.classList.toggle('text-gray-400', !isActive);
+                button.setAttribute('aria-pressed', String(isActive));
+            });
+
+            renderAnnualTrendChart(buildAnnualStats(filteredConcerts, true));
+        }
+
+        function toggleOverview() {
+            isOverviewCollapsed = !isOverviewCollapsed;
+            const content = document.getElementById('overviewCollapsibleContent');
+            const toggleButton = document.getElementById('overviewToggle');
+            const chevron = toggleButton.querySelector('[data-overview-chevron]');
+
+            content.classList.toggle('hidden', isOverviewCollapsed);
+            toggleButton.setAttribute('aria-expanded', String(!isOverviewCollapsed));
+            chevron.classList.toggle('fa-chevron-up', !isOverviewCollapsed);
+            chevron.classList.toggle('fa-chevron-down', isOverviewCollapsed);
+
+            if (!isOverviewCollapsed && annualTrendChart) annualTrendChart.resize();
+        }
+
+        function renderAnnualTrendChart(annualStats) {
+            const container = document.getElementById('annualTrendChartContainer');
+            const emptyState = document.getElementById('annualTrendEmpty');
+            const canvas = document.getElementById('annualTrendChartCanvas');
+
+            if (annualStats.length === 0 || typeof Chart === 'undefined') {
+                if (annualTrendChart) {
+                    annualTrendChart.destroy();
+                    annualTrendChart = null;
+                }
+                container.classList.add('hidden');
+                emptyState.textContent = typeof Chart === 'undefined' ? '年度趨勢圖表元件載入失敗' : '暫無年度資料';
+                emptyState.classList.remove('hidden');
+                return;
+            }
+
+            container.classList.remove('hidden');
+            emptyState.classList.add('hidden');
+
+            const isCountMode = annualTrendMode === 'count';
+            const labels = annualStats.map(item => item.year);
+            const values = annualStats.map(item => isCountMode ? item.count : item.totalPrice);
+            const color = isCountMode ? '#6366F1' : '#34D399';
+            const datasetLabel = isCountMode ? '演唱會場次' : '門票總花費';
+            const formatValue = value => isCountMode ? `${value} 場` : `NT$ ${Number(value).toLocaleString()}`;
+
+            if (!annualTrendChart) {
+                annualTrendChart = new Chart(canvas, {
+                    type: 'line',
+                    data: {
+                        labels,
+                        datasets: [{
+                            label: datasetLabel,
+                            data: values,
+                            borderColor: color,
+                            backgroundColor: `${color}26`,
+                            pointBackgroundColor: color,
+                            pointBorderColor: '#151C2C',
+                            pointBorderWidth: 2,
+                            pointRadius: 4,
+                            pointHoverRadius: 6,
+                            borderWidth: 2.5,
+                            tension: 0.3,
+                            fill: true
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        interaction: { intersect: false, mode: 'index' },
+                        plugins: {
+                            legend: { display: false },
+                            tooltip: {
+                                callbacks: {
+                                    title: items => items.length ? `${items[0].label} 年` : '',
+                                    label: context => `${context.dataset.label}：${formatValue(context.parsed.y)}`
+                                }
+                            }
+                        },
+                        scales: {
+                            x: {
+                                grid: { color: 'rgba(42, 54, 79, 0.45)' },
+                                ticks: { color: '#9CA3AF', maxRotation: 0, autoSkipPadding: 12 }
+                            },
+                            y: {
+                                beginAtZero: true,
+                                grid: { color: 'rgba(42, 54, 79, 0.45)' },
+                                ticks: {
+                                    color: '#9CA3AF',
+                                    precision: isCountMode ? 0 : undefined,
+                                    callback: value => isCountMode ? value : `NT$ ${Number(value).toLocaleString()}`
+                                }
+                            }
+                        }
+                    }
+                });
+                return;
+            }
+
+            annualTrendChart.data.labels = labels;
+            annualTrendChart.data.datasets[0].label = datasetLabel;
+            annualTrendChart.data.datasets[0].data = values;
+            annualTrendChart.data.datasets[0].borderColor = color;
+            annualTrendChart.data.datasets[0].backgroundColor = `${color}26`;
+            annualTrendChart.data.datasets[0].pointBackgroundColor = color;
+            annualTrendChart.options.scales.y.ticks.precision = isCountMode ? 0 : undefined;
+            annualTrendChart.options.scales.y.ticks.callback = value => isCountMode ? value : `NT$ ${Number(value).toLocaleString()}`;
+            annualTrendChart.options.plugins.tooltip.callbacks.label = context => `${context.dataset.label}：${formatValue(context.parsed.y)}`;
+            annualTrendChart.update();
         }
 
         // Helper: Escape HTML to prevent XSS
